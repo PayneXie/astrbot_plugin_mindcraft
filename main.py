@@ -16,10 +16,16 @@ class MindcraftPlugin(Star):
         self.sio = socketio.AsyncClient()
         self.process = None
         self.connected = False
-        self.mindserver_url = "http://localhost:8080"
+        self.mindserver_url = "http://localhost:8076"
         self.target_event = None # Stores the last event to reply to
         self.root_dir = os.path.dirname(os.path.abspath(__file__))
         self.agent_name = "doubao"
+        
+        # Load MC Server config
+        self.config_path = os.path.join(self.root_dir, "config.json")
+        self.mc_host = "127.0.0.1"
+        self.mc_port = 25565
+        self._load_config()
         
         # Socket.IO Event Handlers
         @self.sio.on('connect')
@@ -60,6 +66,29 @@ class MindcraftPlugin(Star):
                     logger.info(f"Should send to user: [{agent_name}] {message}")
                 except Exception as e:
                     logger.error(f"Failed to send message: {e}")
+
+    def _load_config(self):
+        """Load Minecraft server config from file"""
+        if os.path.exists(self.config_path):
+            try:
+                with open(self.config_path, 'r', encoding='utf-8') as f:
+                    data = json.load(f)
+                    self.mc_host = data.get("mc_host", "127.0.0.1")
+                    self.mc_port = data.get("mc_port", 25565)
+                    logger.info(f"Loaded config: MC Server {self.mc_host}:{self.mc_port}")
+            except Exception as e:
+                logger.error(f"Failed to load config: {e}")
+
+    def _save_config(self):
+        """Save Minecraft server config to file"""
+        try:
+            with open(self.config_path, 'w', encoding='utf-8') as f:
+                json.dump({
+                    "mc_host": self.mc_host,
+                    "mc_port": self.mc_port
+                }, f, indent=4)
+        except Exception as e:
+            logger.error(f"Failed to save config: {e}")
 
     async def _get_llm_config(self):
         """Extract LLM config from AstrBot's loaded provider"""
@@ -116,6 +145,27 @@ class MindcraftPlugin(Star):
                 
         return config
 
+    @filter.command("mcserver")
+    async def mcserver(self, event: AstrMessageEvent, address: str = ""):
+        """Set Minecraft Server Address (host:port)"""
+        if not address:
+            yield event.plain_result(f"Current Server: {self.mc_host}:{self.mc_port}\nUsage: /mcserver host:port (e.g. 127.0.0.1:25565)")
+            return
+            
+        parts = address.split(":")
+        self.mc_host = parts[0]
+        if len(parts) > 1:
+            try:
+                self.mc_port = int(parts[1])
+            except ValueError:
+                yield event.plain_result("❌ Invalid port number.")
+                return
+        else:
+            self.mc_port = 25565 # default
+            
+        self._save_config()
+        yield event.plain_result(f"✅ Minecraft Server set to: {self.mc_host}:{self.mc_port}")
+
     @filter.command("mcinstall")
     async def mcinstall(self, event: AstrMessageEvent):
         """Install dependencies (npm install)"""
@@ -165,7 +215,7 @@ class MindcraftPlugin(Star):
         try:
             # Use asyncio subprocess for non-blocking IO
             self.process = await asyncio.create_subprocess_exec(
-                'node', script_path, '--mindserver_port', '8080',
+                'node', script_path, '--mindserver_port', '8076',
                 cwd=self.root_dir,
                 env=llm_config["env"],
                 stdout=asyncio.subprocess.PIPE,
@@ -200,8 +250,17 @@ class MindcraftPlugin(Star):
                 
                 logger.info(f"Creating agent with config: {profile_data}")
                 
-                settings = {"profile": profile_data}
-                await self.sio.emit('create-agent', settings)
+                settings = {
+                    "profile": profile_data,
+                    "host": self.mc_host,
+                    "port": self.mc_port,
+                    "auth": "offline"
+                }
+                
+                def on_create_callback(response):
+                    logger.info(f"Agent creation response: {response}")
+
+                await self.sio.emit('create-agent', settings, callback=on_create_callback)
                 yield event.plain_result(f"🤖 Agent '{self.agent_name}' creation requested using {llm_config['provider_type']} model.")
 
             except Exception as e:

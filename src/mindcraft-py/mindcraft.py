@@ -20,7 +20,7 @@ class Mindcraft:
             sys.stdout.write(f'[Node.js] {line}')
             sys.stdout.flush()
 
-    def init(self, port=8080):
+    def init(self, port=8076):
         if self.process:
             return
 
@@ -86,7 +86,7 @@ class Mindcraft:
 
 mindcraft_instance = Mindcraft()
 
-def init(port=8080):
+def init(port=8076):
     mindcraft_instance.init(port)
 
 def create_agent(settings_json):

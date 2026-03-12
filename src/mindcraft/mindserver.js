@@ -45,7 +45,7 @@ export function logoutAgent(agentName) {
 }
 
 // Initialize the server
-export function createMindServer(host_public = false, port = 8080) {
+export function createMindServer(host_public = false, port = 8076) {
     const app = express();
     server = http.createServer(app);
     io = new Server(server);

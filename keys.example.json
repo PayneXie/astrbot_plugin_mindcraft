@@ -1,0 +1,12 @@
+{
+    "OPENAI_API_KEY": "sk-...",
+    "ANTHROPIC_API_KEY": "sk-...",
+    "REPLICATE_API_KEY": "r8_...",
+    "GEMINI_API_KEY": "AI...",
+    "GROQ_API_KEY": "gsk_...",
+    "HUGGINGFACE_API_KEY": "hf_...",
+    "MISTRAL_API_KEY": "...",
+    "QWEN_API_KEY": "sk-...",
+    "DEEPSEEK_API_KEY": "sk-...",
+    "DOUBAO_API_KEY": "sk-..."
+}

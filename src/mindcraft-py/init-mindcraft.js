@@ -19,6 +19,7 @@ const args = parseArguments();
 
 settings.mindserver_port = args.mindserver_port;
 
-Mindcraft.init(settings.mindserver_port);
+// init(host_public, port, auto_open_ui)
+Mindcraft.init(false, settings.mindserver_port, false);
 
 console.log(`Mindcraft initialized with MindServer at localhost:${settings.mindserver_port}`); 

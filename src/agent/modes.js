@@ -4,9 +4,23 @@ import * as mc from '../utils/mcdata.js';
 import settings from './settings.js'
 import convoManager from './conversation.js';
 
+let last_say_time = 0;
+let last_say_message = '';
+const SAY_COOLDOWN = 5000; // 5 seconds cooldown for duplicate messages
+
 async function say(agent, message) {
     agent.bot.modes.behavior_log += message + '\n';
     if (agent.shut_up || !settings.narrate_behavior) return;
+
+    // Debounce logic: prevent repeating the same message within cooldown period
+    const now = Date.now();
+    if (message === last_say_message && (now - last_say_time) < SAY_COOLDOWN) {
+        return;
+    }
+    
+    last_say_time = now;
+    last_say_message = message;
+    
     agent.openChat(message);
 }
 

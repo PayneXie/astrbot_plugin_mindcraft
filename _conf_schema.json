@@ -1,14 +1,14 @@
 {
   "_whitelist_section": {
-    "description": "=== 权限管理 ===",
+    "description": "=== 权限白名单 ===",
     "type": "text",
     "invisible": true
   },
   "cmd_whitelist": {
-    "description": "指令白名单",
+    "description": "允许使用命令的用户列表",
     "type": "list",
     "default": [],
-    "hint": "允许使用插件指令的 QQ 号。留空则允许所有人使用 (不推荐)。格式: 纯数字 QQ 号"
+    "hint": "留空则允许所有人使用。格式：用户QQ号 (例如: [\"12345678\"])"
   },
 
   "_mc_section": {

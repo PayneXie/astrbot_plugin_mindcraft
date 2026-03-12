@@ -177,12 +177,15 @@ class MindcraftPlugin(Star):
 
     def _check_permission(self, event: AstrMessageEvent) -> bool:
         """Check if the sender is in the whitelist"""
+        # AstrBot passes config lists as actual lists
         whitelist = self.config.get("cmd_whitelist", [])
+        
+        # If whitelist is empty, allow all (or return False if you want strict mode by default)
         if not whitelist:
-            return True # If whitelist is empty, allow all (or change to False if strict mode)
+            return True
             
         sender_id = event.get_sender_id()
-        # AstrBot IDs might be strings, ensure compatibility
+        # Ensure string comparison for robust matching
         return str(sender_id) in [str(uid) for uid in whitelist]
 
     @filter.command("mcstart")
@@ -190,10 +193,6 @@ class MindcraftPlugin(Star):
         """Start the Mindcraft server and Agent"""
         # Stop event propagation
         event.stop_event()
-        
-        if not self._check_permission(event):
-            yield event.plain_result("⛔ 暂无权限使用此命令")
-            return
 
         if self.process:
             yield event.plain_result("⚠️ Mindcraft is already running.")
@@ -318,16 +317,8 @@ class MindcraftPlugin(Star):
             yield event.plain_result("Mindcraft is not running.")
 
     @filter.command("mc")
-    async def mc(self, event: AstrMessageEvent, message: str = ""):
-        """Chat with the Mindcraft Agent"""
-        # Stop event propagation to prevent other plugins/LLM from processing this message
-        event.stop_event()
-        
-        if not self._check_permission(event):
-            # For chat, we might just ignore instead of sending "No Permission" to avoid spam
-            # yield event.plain_result("⛔ 暂无权限")
-            return
-
+    async def mc_chat(self, event: AstrMessageEvent, message: str = ""):
+        """Chat with the bot or send commands"""
         if not self.sio.connected:
             yield event.plain_result("❌ Mindcraft is not connected. Use /mcstart first.")
             return

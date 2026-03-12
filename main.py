@@ -175,11 +175,25 @@ class MindcraftPlugin(Star):
         except Exception as e:
             yield event.plain_result(f"❌ Error running npm install: {e}")
 
+    def _check_permission(self, event: AstrMessageEvent) -> bool:
+        """Check if the sender is in the whitelist"""
+        whitelist = self.config.get("cmd_whitelist", [])
+        if not whitelist:
+            return True # If whitelist is empty, allow all (or change to False if strict mode)
+            
+        sender_id = event.get_sender_id()
+        # AstrBot IDs might be strings, ensure compatibility
+        return str(sender_id) in [str(uid) for uid in whitelist]
+
     @filter.command("mcstart")
     async def mcstart(self, event: AstrMessageEvent):
         """Start the Mindcraft server and Agent"""
         # Stop event propagation
         event.stop_event()
+        
+        if not self._check_permission(event):
+            yield event.plain_result("⛔ 暂无权限使用此命令")
+            return
 
         if self.process:
             yield event.plain_result("⚠️ Mindcraft is already running.")
@@ -304,8 +318,16 @@ class MindcraftPlugin(Star):
             yield event.plain_result("Mindcraft is not running.")
 
     @filter.command("mc")
-    async def mc_chat(self, event: AstrMessageEvent, message: str = ""):
-        """Chat with the bot or send commands"""
+    async def mc(self, event: AstrMessageEvent, message: str = ""):
+        """Chat with the Mindcraft Agent"""
+        # Stop event propagation to prevent other plugins/LLM from processing this message
+        event.stop_event()
+        
+        if not self._check_permission(event):
+            # For chat, we might just ignore instead of sending "No Permission" to avoid spam
+            # yield event.plain_result("⛔ 暂无权限")
+            return
+
         if not self.sio.connected:
             yield event.plain_result("❌ Mindcraft is not connected. Use /mcstart first.")
             return

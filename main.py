@@ -127,8 +127,9 @@ class MindcraftPlugin(Star):
             return
 
         try:
-            process = await asyncio.create_subprocess_exec(
-                'npm', 'install',
+            # Use shell=True for Windows to find npm
+            process = await asyncio.create_subprocess_shell(
+                'npm install',
                 cwd=self.root_dir,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE

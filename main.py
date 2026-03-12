@@ -17,7 +17,7 @@ class MindcraftPlugin(Star):
         self.sio = socketio.AsyncClient()
         self.process = None
         self.connected = False
-        self.target_event = None # Stores the last event to reply to
+        # self.target_event = None # Deprecated in favor of self.sessions
         self.root_dir = os.path.dirname(os.path.abspath(__file__))
         
         # Load config from self.config (AstrBot managed)
@@ -25,6 +25,11 @@ class MindcraftPlugin(Star):
         self.mc_port = self.config.get("mc_port", 25565)
         self.mindserver_url = f"http://{self.config.get('mindserver_host', '127.0.0.1')}:{self.config.get('mindserver_port', 8076)}"
         self.agent_name = self.config.get("agent_name", "MindBot")
+        
+        # Session mapping: agent_name -> AstrMessageEvent
+        # This allows multiple users to interact with different agents (if supported)
+        # or tracks who is currently controlling the single agent.
+        self.sessions = {}
         
         # State cache for inventory/status queries
         self.agent_states = {}
@@ -48,18 +53,29 @@ class MindcraftPlugin(Star):
         @self.sio.on('bot-output')
         async def on_bot_output(agent_name, message):
             logger.info(f"Bot output from {agent_name}: {message}")
-            if self.target_event:
+            
+            # Find the session owner for this agent
+            target_event = self.sessions.get(agent_name)
+            
+            # Fallback: if no specific session, try the default agent name (for single-user feel)
+            if not target_event and agent_name == self.agent_name:
+                 # In single agent mode, we might want to broadcast or just log warning
+                 # But we can check if there's *any* session active as a fallback?
+                 # For now, strict mapping is safer to avoid spamming wrong groups.
+                 pass
+
+            if target_event:
                 try:
                     # Construct message chain
                     from astrbot.api.message_components import Plain
                     from astrbot.core.message.components import MessageChain
                     
                     # Try using self.context.send_message with MessageChain object
-                    if self.target_event:
+                    if target_event:
                         # Construct a real MessageChain object manually
                         chain = MessageChain()
                         chain.chain.append(Plain(f"[{agent_name}] {message}"))
-                        await self.context.send_message(self.target_event.unified_msg_origin, chain)
+                        await self.context.send_message(target_event.unified_msg_origin, chain)
                     else:
                         logger.warning(f"No target event to reply to. Message dropped: {message}")
                     
@@ -76,7 +92,7 @@ class MindcraftPlugin(Star):
                             def __init__(self, components):
                                 self.chain = components
                         
-                        await self.context.send_message(self.target_event.unified_msg_origin, MockMessageChain([Plain(f"[{agent_name}] {message}")]))
+                        await self.context.send_message(target_event.unified_msg_origin, MockMessageChain([Plain(f"[{agent_name}] {message}")]))
                     except Exception as e2:
                         logger.error(f"Fallback send failed: {e2}")
 
@@ -198,7 +214,9 @@ class MindcraftPlugin(Star):
             yield event.plain_result("⚠️ Mindcraft is already running.")
             return
 
-        self.target_event = event # Update target for replies
+        # Register session for this agent
+        self.sessions[self.agent_name] = event
+        
         yield event.plain_result("🚀 正在启动 Mindcraft 服务器...")
 
         # 1. Prepare Environment & Config
@@ -335,7 +353,8 @@ class MindcraftPlugin(Star):
             yield event.plain_result("Usage: /mc [message]")
             return
 
-        self.target_event = event # Update target to reply to this conversation
+        # Update session target: whoever speaks to the agent "claims" the replies
+        self.sessions[self.agent_name] = event
         
         # Try to send
         try:
@@ -360,6 +379,10 @@ class MindcraftPlugin(Star):
         if not self.sio.connected:
              yield event.plain_result("❌ MindServer not connected.")
              return
+        
+        # Update session target for inventory too? 
+        # Maybe optional, but good for consistency if agent replies asynchronously later.
+        self.sessions[self.agent_name] = event
         
         state = self.agent_states.get(self.agent_name)
         if not state:

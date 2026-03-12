@@ -217,7 +217,7 @@ class MindcraftPlugin(Star):
             line = await stream.readline()
             if not line:
                 break
-            # logger.info(f"{prefix} {line.decode().strip()}")
+            logger.info(f"{prefix} {line.decode().strip()}")
 
     @filter.command("mcstop")
     async def mcstop(self, event: AstrMessageEvent):
@@ -227,8 +227,17 @@ class MindcraftPlugin(Star):
         
         if self.process:
             try:
+                # On Windows, terminate() might not kill the entire process tree (node + children)
+                # We can try to use taskkill to be sure, or just terminate.
                 self.process.terminate()
-                await self.process.wait()
+                # Wait with timeout to avoid hanging
+                try:
+                    await asyncio.wait_for(self.process.wait(), timeout=5.0)
+                except asyncio.TimeoutError:
+                    logger.warning("Process did not exit in time, forcing kill.")
+                    self.process.kill()
+                    await self.process.wait()
+
                 self.process = None
                 yield event.plain_result("🛑 Mindcraft server stopped.")
             except Exception as e:

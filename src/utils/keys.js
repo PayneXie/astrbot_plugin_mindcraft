@@ -14,6 +14,7 @@ export function getKey(name) {
         key = process.env[name];
     }
     if (!key) {
+        console.error(`[DEBUG] getKey failed for ${name}. Env available:`, Object.keys(process.env).filter(k => k.includes('KEY')));
         throw new Error(`API key "${name}" not found in keys.json or environment variables!`);
     }
     return key;

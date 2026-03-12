@@ -16,16 +16,14 @@ class MindcraftPlugin(Star):
         self.sio = socketio.AsyncClient()
         self.process = None
         self.connected = False
-        self.mindserver_url = "http://localhost:8076"
         self.target_event = None # Stores the last event to reply to
         self.root_dir = os.path.dirname(os.path.abspath(__file__))
-        self.agent_name = "doubao"
         
-        # Load MC Server config
-        self.config_path = os.path.join(self.root_dir, "config.json")
-        self.mc_host = "127.0.0.1"
-        self.mc_port = 25565
-        self._load_config()
+        # Load config from self.config (AstrBot managed)
+        self.mc_host = self.config.get("mc_host", "127.0.0.1")
+        self.mc_port = self.config.get("mc_port", 25565)
+        self.mindserver_url = f"http://{self.config.get('mindserver_host', '127.0.0.1')}:{self.config.get('mindserver_port', 8076)}"
+        self.agent_name = self.config.get("agent_name", "MindBot")
         
         # Socket.IO Event Handlers
         @self.sio.on('connect')
@@ -67,82 +65,34 @@ class MindcraftPlugin(Star):
                 except Exception as e:
                     logger.error(f"Failed to send message: {e}")
 
-    def _load_config(self):
-        """Load Minecraft server config from file"""
-        if os.path.exists(self.config_path):
-            try:
-                with open(self.config_path, 'r', encoding='utf-8') as f:
-                    data = json.load(f)
-                    self.mc_host = data.get("mc_host", "127.0.0.1")
-                    self.mc_port = data.get("mc_port", 25565)
-                    logger.info(f"Loaded config: MC Server {self.mc_host}:{self.mc_port}")
-            except Exception as e:
-                logger.error(f"Failed to load config: {e}")
-
-    def _save_config(self):
-        """Save Minecraft server config to file"""
-        try:
-            with open(self.config_path, 'w', encoding='utf-8') as f:
-                json.dump({
-                    "mc_host": self.mc_host,
-                    "mc_port": self.mc_port
-                }, f, indent=4)
-        except Exception as e:
-            logger.error(f"Failed to save config: {e}")
+    # Removed _load_config and _save_config as we use AstrBot's config system now
 
     async def _get_llm_config(self):
-        """Extract LLM config from AstrBot's loaded provider"""
+        """Construct LLM config from plugin configuration"""
+        # 1. Base Config
         config = {
             "env": os.environ.copy(),
-            "model": "gpt-4", # default fallback
-            "provider_type": "openai", # default
-            "api_url": None
+            "model": self.config.get("llm_model", "gpt-4"),
+            "provider_type": self.config.get("llm_api", "openai"),
+            "api_url": self.config.get("llm_url", "")
         }
         
-        # Try to get the provider
-        provider = None
-        provider_id = self.config.get("llm_provider_id")
-        if provider_id:
-            provider = self.context.get_provider_by_id(provider_id)
-        
-        if not provider and hasattr(self.context, "get_all_providers"):
-            providers = self.context.get_all_providers()
-            if providers:
-                provider = providers[0]
-        
-        if provider:
-            logger.info(f"Using LLM Provider: {type(provider).__name__}")
-            cfg = getattr(provider, "config", {})
+        # 2. API Key Injection
+        api_key = self.config.get("llm_api_key", "")
+        if api_key:
+            # Inject into common env vars to cover most SDKs
+            config["env"]["OPENAI_API_KEY"] = api_key
+            config["env"]["DOUBAO_API_KEY"] = api_key
+            config["env"]["DEEPSEEK_API_KEY"] = api_key
+            config["env"]["ANTHROPIC_API_KEY"] = api_key
+            config["env"]["GOOGLE_API_KEY"] = api_key
+            config["env"]["GROK_API_KEY"] = api_key
+            # Also generic ones if needed by specific providers
+            config["env"]["API_KEY"] = api_key
+            logger.info(f"Using configured API Key for {config['provider_type']}")
+        else:
+            logger.warning("No API Key configured in plugin settings. Attempting to use system environment or fallback.")
             
-            # 1. API Key
-            api_key = cfg.get("api_key") or cfg.get("access_key") or cfg.get("token")
-            if api_key:
-                logger.info("Successfully extracted API Key.")
-                config["env"]["DOUBAO_API_KEY"] = api_key
-                config["env"]["OPENAI_API_KEY"] = api_key
-                config["env"]["DEEPSEEK_API_KEY"] = api_key
-            
-            # 2. Base URL
-            api_url = cfg.get("api_url") or cfg.get("base_url") or cfg.get("endpoint")
-            if api_url:
-                config["api_url"] = api_url
-            
-            # 3. Model Name
-            model_name = cfg.get("model")
-            if model_name:
-                config["model"] = model_name
-                
-            # 4. Provider Type Mapping
-            p_name = type(provider).__name__.lower()
-            if "doubao" in p_name:
-                config["provider_type"] = "doubao"
-            elif "deepseek" in p_name:
-                config["provider_type"] = "deepseek"
-            elif "openai" in p_name:
-                config["provider_type"] = "openai"
-            elif "ollama" in p_name:
-                config["provider_type"] = "ollama"
-                
         return config
 
     @filter.command("mcserver")
@@ -163,8 +113,12 @@ class MindcraftPlugin(Star):
         else:
             self.mc_port = 25565 # default
             
-        self._save_config()
-        yield event.plain_result(f"✅ Minecraft Server set to: {self.mc_host}:{self.mc_port}")
+        # Update config in memory (Persistent saving depends on AstrBot implementation)
+        # Typically users should use WebUI to configure persistent settings
+        self.config["mc_host"] = self.mc_host
+        self.config["mc_port"] = self.mc_port
+        
+        yield event.plain_result(f"✅ Minecraft Server set to: {self.mc_host}:{self.mc_port}\n(Note: Please update config in WebUI for persistence)")
 
     @filter.command("mcinstall")
     async def mcinstall(self, event: AstrMessageEvent):
@@ -212,10 +166,11 @@ class MindcraftPlugin(Star):
              yield event.plain_result(f"❌ Could not find script at {script_path}")
              return
 
+        mindserver_port = str(self.config.get('mindserver_port', 8076))
         try:
             # Use asyncio subprocess for non-blocking IO
             self.process = await asyncio.create_subprocess_exec(
-                'node', script_path, '--mindserver_port', '8076',
+                'node', script_path, '--mindserver_port', mindserver_port,
                 cwd=self.root_dir,
                 env=llm_config["env"],
                 stdout=asyncio.subprocess.PIPE,

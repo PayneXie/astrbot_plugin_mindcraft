@@ -19,6 +19,12 @@ const args = parseArguments();
 
 settings.mindserver_port = args.mindserver_port;
 
+console.log('[DEBUG] init-mindcraft env check:', {
+    OPENAI_API_KEY: process.env.OPENAI_API_KEY ? 'Present' : 'Missing',
+    DOUBAO_API_KEY: process.env.DOUBAO_API_KEY ? 'Present' : 'Missing',
+    DEEPSEEK_API_KEY: process.env.DEEPSEEK_API_KEY ? 'Present' : 'Missing'
+});
+
 // init(host_public, port, auto_open_ui)
 Mindcraft.init(false, settings.mindserver_port, false);
 

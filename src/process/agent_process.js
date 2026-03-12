@@ -20,9 +20,13 @@ export class AgentProcess {
             args.push('-m', init_message);
         args.push('-p', this.port);
 
+        console.log('[DEBUG] AgentProcess spawning with env check:', {
+            OPENAI_API_KEY: process.env.OPENAI_API_KEY ? 'Present' : 'Missing'
+        });
+
         const agentProcess = spawn('node', args, {
             stdio: 'inherit',
-            stderr: 'inherit',
+            env: process.env
         });
         
         let last_restart = Date.now();

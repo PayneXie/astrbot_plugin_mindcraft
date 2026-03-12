@@ -28,4 +28,5 @@ tasks/construction_tasks/test/**
 tasks/construction_tasks/train/**
 server_data*
 **/.DS_Store
+sample2.py
 src/mindcraft-py/__pycache__/

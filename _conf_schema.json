@@ -1,0 +1,102 @@
+{
+  "_mc_section": {
+    "description": "=== Minecraft 服务器配置 ===",
+    "type": "text",
+    "invisible": true
+  },
+  "mc_host": {
+    "description": "Minecraft 服务器地址",
+    "type": "string",
+    "default": "127.0.0.1",
+    "hint": "Minecraft 服务器的 IP 或域名"
+  },
+  "mc_port": {
+    "description": "Minecraft 服务器端口",
+    "type": "int",
+    "default": 25565,
+    "hint": "Java版默认 25565，基岩版默认 19132"
+  },
+
+  "_mindserver_section": {
+    "description": "=== MindServer 配置 ===",
+    "type": "text",
+    "invisible": true
+  },
+  "mindserver_host": {
+    "description": "MindServer 监听地址",
+    "type": "string",
+    "default": "127.0.0.1",
+    "hint": "通常为 127.0.0.1 (本地)"
+  },
+  "mindserver_port": {
+    "description": "MindServer 端口",
+    "type": "int",
+    "default": 8076,
+    "hint": "Mindcraft 后台服务端口"
+  },
+
+  "_llm_section": {
+    "description": "=== LLM 模型配置 ===",
+    "type": "text",
+    "invisible": true
+  },
+  "llm_api": {
+    "description": "API 提供商 (Provider)",
+    "type": "string",
+    "default": "openai",
+    "options": [
+      "openai",
+      "doubao",
+      "deepseek",
+      "ollama",
+      "google",
+      "anthropic",
+      "xai",
+      "mistral",
+      "qwen",
+      "azure",
+      "openrouter",
+      "huggingface",
+      "replicate",
+      "vllm",
+      "cerebras",
+      "glhf",
+      "groq",
+      "hyperbolic",
+      "mercury",
+      "novita"
+    ],
+    "hint": "选择所使用的模型服务商"
+  },
+  "llm_model": {
+    "description": "模型名称 (Model Name)",
+    "type": "string",
+    "default": "gpt-4o",
+    "hint": "例如: gpt-4o, doubao-pro-32k, deepseek-chat, llama3"
+  },
+  "llm_api_key": {
+    "description": "API Key",
+    "type": "string",
+    "default": "",
+    "obfuscate": true,
+    "hint": "对应服务商的 API Key (Ollama/Local 可留空)"
+  },
+  "llm_url": {
+    "description": "API Base URL (可选)",
+    "type": "string",
+    "default": "",
+    "hint": "自定义 API 地址。例如 Ollama: http://localhost:11434/v1。OpenAI/Doubao 等通常留空使用默认地址。"
+  },
+
+  "_agent_section": {
+    "description": "=== Agent 设置 ===",
+    "type": "text",
+    "invisible": true
+  },
+  "agent_name": {
+    "description": "机器人名称",
+    "type": "string",
+    "default": "MindBot",
+    "hint": "在 Minecraft 游戏中显示的名称"
+  }
+}

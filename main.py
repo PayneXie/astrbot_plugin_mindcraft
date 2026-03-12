@@ -1,5 +1,6 @@
 from astrbot.api.event import filter, AstrMessageEvent
 from astrbot.api.star import Context, Star, register
+from astrbot.api.message_components import Plain
 from astrbot.api import logger
 import socketio
 import asyncio
@@ -40,30 +41,39 @@ class MindcraftPlugin(Star):
         async def on_bot_output(agent_name, message):
             logger.info(f"Bot output from {agent_name}: {message}")
             if self.target_event:
-                # Send the bot's message back to the user
-                # We use the stored event to send a message to the same conversation
-                # Since we can't yield here (it's a callback), we use the event's context or platform API if available.
-                # In AstrBot, we might not be able to directly 'yield' from a callback.
-                # We usually need to use the context to send a message.
-                # Assuming AstrMessageEvent has a way to send, or we use the provider.
-                # For simplicity in this template, we'll try to use the provider from the context if possible,
-                # or just log if we can't easily send async.
-                # However, typically plugins are reactive. 
-                # Let's try to use the event object to send a message if it supports it, 
-                # or use the context's messaging capabilities.
-                
-                # Note: AstrBot's API for proactive messaging might vary. 
-                # We will try to use the session/conversation ID from the target_event.
                 try:
-                    # This is a best-effort guess at the API based on common bot framework patterns
-                    # If AstrBot supports sending via context:
-                    # await self.context.send_message(self.target_event.unified_msg_origin, f"[{agent_name}] {message}")
-                    pass 
-                    # Since I don't have the full AstrBot send API in the prompt, I will implement a placeholder
-                    # that logs it. The user can adapt the send logic.
-                    logger.info(f"Should send to user: [{agent_name}] {message}")
+                    # Construct message chain
+                    from astrbot.api.message_components import Plain
+                    from astrbot.core.message.components import MessageChain
+                    
+                    # Try using self.context.send_message with MessageChain object
+                    if self.target_event:
+                        # Construct a real MessageChain object manually
+                        chain = MessageChain()
+                        chain.chain.append(Plain(f"[{agent_name}] {message}"))
+                        await self.context.send_message(self.target_event.unified_msg_origin, chain)
+                    else:
+                        logger.warning(f"No target event to reply to. Message dropped: {message}")
+                    
+                except ImportError:
+                    # Fallback if MessageChain import fails or structure is different
+                    try:
+                        # If MessageChain is not importable, maybe we can mock it or use a different method
+                        # Some versions use a list, but user reported list failed.
+                        # User reported: 'list' object has no attribute 'chain'
+                        # This means AstrBot is accessing .chain on the 2nd argument.
+                        
+                        # Let's try to pass an object that has a .chain attribute which is a list
+                        class MockMessageChain:
+                            def __init__(self, components):
+                                self.chain = components
+                        
+                        await self.context.send_message(self.target_event.unified_msg_origin, MockMessageChain([Plain(f"[{agent_name}] {message}")]))
+                    except Exception as e2:
+                        logger.error(f"Fallback send failed: {e2}")
+
                 except Exception as e:
-                    logger.error(f"Failed to send message: {e}")
+                    logger.error(f"Failed to send message via context: {e}")
 
     # Removed _load_config and _save_config as we use AstrBot's config system now
 
@@ -155,7 +165,7 @@ class MindcraftPlugin(Star):
             return
 
         self.target_event = event # Update target for replies
-        yield event.plain_result("🚀 Starting Mindcraft Server...")
+        yield event.plain_result("🚀 正在启动 Mindcraft 服务器...")
 
         # 1. Prepare Environment & Config
         llm_config = await self._get_llm_config()
@@ -163,7 +173,7 @@ class MindcraftPlugin(Star):
         # 2. Start Node.js Process
         script_path = os.path.join(self.root_dir, 'src', 'mindcraft-py', 'init-mindcraft.js')
         if not os.path.exists(script_path):
-             yield event.plain_result(f"❌ Could not find script at {script_path}")
+             yield event.plain_result(f"❌ 找不到启动脚本: {script_path}")
              return
 
         mindserver_port = str(self.config.get('mindserver_port', 8076))
@@ -182,7 +192,7 @@ class MindcraftPlugin(Star):
             asyncio.create_task(self._log_stream(self.process.stdout, "[Node]"))
             asyncio.create_task(self._log_stream(self.process.stderr, "[Node Error]"))
 
-            yield event.plain_result("✅ Node.js process started. Connecting to MindServer...")
+            # yield event.plain_result("✅ Node.js process started. Connecting to MindServer...")
             
             # 3. Connect Socket.IO (Retry logic)
             connected = False
@@ -194,21 +204,19 @@ class MindcraftPlugin(Star):
                     connected = True
                     break
                 except Exception as e:
-                    # Connection refused is expected while server is starting
                     pass
             
             if not connected:
-                yield event.plain_result(f"❌ Failed to connect to MindServer after 10 seconds.")
+                yield event.plain_result(f"❌ 连接 MindServer 失败 (超时 10s)")
                 # Kill process if connection failed
                 if self.process:
                     self.process.terminate()
                     self.process = None
                 return
 
-            yield event.plain_result("✅ Connected to MindServer.")
+            # yield event.plain_result("✅ Connected to MindServer.")
             
             # 4. Create Agent with Dynamic Profile
-            # Instead of loading from file, we construct it from Python config
             profile_data = {
                 "name": self.agent_name,
                 "model": {
@@ -217,7 +225,6 @@ class MindcraftPlugin(Star):
                 }
             }
             
-            # Inject custom URL if present (critical for Doubao/Local LLMs)
             if llm_config["api_url"]:
                 profile_data["model"]["url"] = llm_config["api_url"]
             
@@ -234,7 +241,7 @@ class MindcraftPlugin(Star):
                 logger.info(f"Agent creation response: {response}")
 
             await self.sio.emit('create-agent', settings, callback=on_create_callback)
-            yield event.plain_result(f"🤖 Agent '{self.agent_name}' creation requested using {llm_config['provider_type']} model.")
+            yield event.plain_result(f"🤖 Mindcraft 启动成功！\n代理: {self.agent_name}\n模型: {llm_config['provider_type']}\n服务器: {self.mc_host}:{self.mc_port}")
 
         except Exception as e:
             yield event.plain_result(f"❌ Failed to start process: {e}")
@@ -287,14 +294,28 @@ class MindcraftPlugin(Star):
         
         # Try to send
         try:
-            # The server expects 'send-message' event
-            await self.sio.emit('send-message', self.agent_name, {
+            # The server expects 'send-message' event with 2 args: agent_name, data
+            # Passing as *args to emit works best for multiple arguments in socket.io
+            await self.sio.emit('send-message', data=(self.agent_name, {
                 "from": event.get_sender_name() or "User",
                 "message": message
-            })
+            }))
             
-            yield event.plain_result(f"Sent to {self.agent_name}: {message}")
+            # yield event.plain_result(f"Sent to {self.agent_name}: {message}")
             
         except Exception as e:
             yield event.plain_result(f"❌ Failed to send message: {e}")
+
+    @filter.command("mcinventory")
+    async def mcinventory(self, event: AstrMessageEvent):
+        """Get Bot Inventory"""
+        if not self.sio.connected:
+             yield event.plain_result("❌ MindServer not connected.")
+             return
+        
+        self.target_event = event
+        # Sending !inventory command to the agent
+        # The agent's query handler (src/agent/commands/queries.js) will process this
+        # and return the result via on_bot_output
+        await self.sio.emit('command', data=(self.agent_name, "!inventory"))
 

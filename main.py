@@ -317,8 +317,16 @@ class MindcraftPlugin(Star):
             yield event.plain_result("Mindcraft is not running.")
 
     @filter.command("mc")
-    async def mc_chat(self, event: AstrMessageEvent, message: str = ""):
-        """Chat with the bot or send commands"""
+    async def mc(self, event: AstrMessageEvent, message: str = ""):
+        """Chat with the Mindcraft Agent"""
+        # Stop event propagation to prevent other plugins/LLM from processing this message
+        event.stop_event()
+        
+        if not self._check_permission(event):
+            # For chat, we might just ignore instead of sending "No Permission" to avoid spam
+            # yield event.plain_result("⛔ 暂无权限")
+            return
+
         if not self.sio.connected:
             yield event.plain_result("❌ Mindcraft is not connected. Use /mcstart first.")
             return

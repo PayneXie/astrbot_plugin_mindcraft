@@ -26,6 +26,9 @@ class MindcraftPlugin(Star):
         self.mindserver_url = f"http://{self.config.get('mindserver_host', '127.0.0.1')}:{self.config.get('mindserver_port', 8076)}"
         self.agent_name = self.config.get("agent_name", "MindBot")
         
+        # State cache for inventory/status queries
+        self.agent_states = {}
+        
         # Socket.IO Event Handlers
         @self.sio.on('connect')
         async def on_connect():
@@ -37,6 +40,11 @@ class MindcraftPlugin(Star):
             logger.info("Disconnected from MindServer")
             self.connected = False
 
+        @self.sio.on('state-update')
+        async def on_state_update(states):
+            # Cache the latest state
+            self.agent_states = states
+            
         @self.sio.on('bot-output')
         async def on_bot_output(agent_name, message):
             logger.info(f"Bot output from {agent_name}: {message}")
@@ -108,6 +116,9 @@ class MindcraftPlugin(Star):
     @filter.command("mcserver")
     async def mcserver(self, event: AstrMessageEvent, address: str = ""):
         """Set Minecraft Server Address (host:port)"""
+        # Stop event propagation
+        event.stop_event()
+        
         if not address:
             yield event.plain_result(f"Current Server: {self.mc_host}:{self.mc_port}\nUsage: /mcserver host:port (e.g. 127.0.0.1:25565)")
             return
@@ -132,7 +143,14 @@ class MindcraftPlugin(Star):
 
     @filter.command("mcinstall")
     async def mcinstall(self, event: AstrMessageEvent):
-        """Install dependencies (npm install)"""
+        """Install Node.js dependencies"""
+        # Stop event propagation
+        event.stop_event()
+        
+        if self.process:
+            yield event.plain_result("⚠️ Please stop the server before installing dependencies.")
+            return
+
         yield event.plain_result("📦 Checking and installing dependencies...")
         
         node_modules_path = os.path.join(self.root_dir, 'node_modules')
@@ -160,6 +178,9 @@ class MindcraftPlugin(Star):
     @filter.command("mcstart")
     async def mcstart(self, event: AstrMessageEvent):
         """Start the Mindcraft server and Agent"""
+        # Stop event propagation
+        event.stop_event()
+
         if self.process:
             yield event.plain_result("⚠️ Mindcraft is already running.")
             return
@@ -215,6 +236,9 @@ class MindcraftPlugin(Star):
                 return
 
             # yield event.plain_result("✅ Connected to MindServer.")
+            
+            # Subscribe to state updates (inventory, health, position etc.)
+            await self.sio.emit('listen-to-agents')
             
             # 4. Create Agent with Dynamic Profile
             profile_data = {
@@ -308,14 +332,57 @@ class MindcraftPlugin(Star):
 
     @filter.command("mcinventory")
     async def mcinventory(self, event: AstrMessageEvent):
-        """Get Bot Inventory"""
+        """Get Bot Inventory and Status"""
+        # Stop event propagation
+        event.stop_event()
+        
         if not self.sio.connected:
              yield event.plain_result("❌ MindServer not connected.")
              return
         
-        self.target_event = event
-        # Sending !inventory command to the agent
-        # The agent's query handler (src/agent/commands/queries.js) will process this
-        # and return the result via on_bot_output
-        await self.sio.emit('command', data=(self.agent_name, "!inventory"))
+        state = self.agent_states.get(self.agent_name)
+        if not state:
+            yield event.plain_result(f"⚠️ 暂无 {self.agent_name} 的状态信息 (可能未连接或数据未同步)")
+            return
+            
+        if state.get('error'):
+             yield event.plain_result(f"❌ 获取状态失败: {state['error']}")
+             return
+
+        # Parse Gameplay Stats
+        gp = state.get('gameplay', {})
+        health = gp.get('health', 0)
+        food = gp.get('hunger', 0)
+        pos = gp.get('position', {})
+        pos_str = f"({int(pos.get('x',0))}, {int(pos.get('y',0))}, {int(pos.get('z',0))})"
+        gamemode = gp.get('gamemode', 'unknown')
+        
+        # Parse Inventory
+        inv = state.get('inventory', {})
+        items = inv.get('counts', {})
+        equipment = inv.get('equipment', {})
+        
+        # Build Output
+        msg = [f"📊 状态: {self.agent_name}"]
+        msg.append(f"❤️ 生命: {health:.1f} | 🍖 饥饿: {food:.1f}")
+        msg.append(f"📍 位置: {pos_str} | 🎮 模式: {gamemode}")
+        
+        if equipment:
+            msg.append("\n🛡️ 装备:")
+            if equipment.get('mainHand'): msg.append(f"  ✋ 主手: {equipment['mainHand']}")
+            if equipment.get('helmet'): msg.append(f"  🧢 头盔: {equipment['helmet']}")
+            if equipment.get('chestplate'): msg.append(f"  👕 胸甲: {equipment['chestplate']}")
+            if equipment.get('leggings'): msg.append(f"  👖 护腿: {equipment['leggings']}")
+            if equipment.get('boots'): msg.append(f"  👞 靴子: {equipment['boots']}")
+            
+        msg.append(f"\n🎒 背包 ({inv.get('stacksUsed', 0)}/{inv.get('totalSlots', 0)}):")
+        if not items:
+            msg.append("  (空)")
+        else:
+            # Sort by count desc
+            sorted_items = sorted(items.items(), key=lambda x: x[1], reverse=True)
+            for name, count in sorted_items:
+                msg.append(f"  - {name}: {count}")
+                
+        yield event.plain_result("\n".join(msg))
 

@@ -217,9 +217,9 @@ export function createMindServer(host_public = false, port = 8076) {
         });
     });
 
-    let host = host_public ? '0.0.0.0' : 'localhost';
+    let host = host_public ? '0.0.0.0' : '127.0.0.1';
     server.listen(port, host, () => {
-        console.log(`MindServer running on port ${port}`);
+        console.log(`MindServer running on port ${port} (${host})`);
     });
 
     return server;

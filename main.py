@@ -167,6 +167,7 @@ class MindcraftPlugin(Star):
              return
 
         mindserver_port = str(self.config.get('mindserver_port', 8076))
+        
         try:
             # Use asyncio subprocess for non-blocking IO
             self.process = await asyncio.create_subprocess_exec(
@@ -183,45 +184,57 @@ class MindcraftPlugin(Star):
 
             yield event.plain_result("✅ Node.js process started. Connecting to MindServer...")
             
-            # 3. Connect Socket.IO
-            await asyncio.sleep(3) # Wait for server to boot
-            try:
-                await self.sio.connect(self.mindserver_url)
-                yield event.plain_result("✅ Connected to MindServer.")
-                
-                # 4. Create Agent with Dynamic Profile
-                # Instead of loading from file, we construct it from Python config
-                profile_data = {
-                    "name": self.agent_name,
-                    "model": {
-                        "api": llm_config["provider_type"],
-                        "model": llm_config["model"]
-                    }
-                }
-                
-                # Inject custom URL if present (critical for Doubao/Local LLMs)
-                if llm_config["api_url"]:
-                    profile_data["model"]["url"] = llm_config["api_url"]
-                
-                logger.info(f"Creating agent with config: {profile_data}")
-                
-                settings = {
-                    "profile": profile_data,
-                    "host": self.mc_host,
-                    "port": self.mc_port,
-                    "auth": "offline"
-                }
-                
-                def on_create_callback(response):
-                    logger.info(f"Agent creation response: {response}")
+            # 3. Connect Socket.IO (Retry logic)
+            connected = False
+            for i in range(10): # Try for 10 seconds
+                await asyncio.sleep(1)
+                try:
+                    logger.info(f"Attempting connection to {self.mindserver_url} (Try {i+1}/10)")
+                    await self.sio.connect(self.mindserver_url)
+                    connected = True
+                    break
+                except Exception as e:
+                    # Connection refused is expected while server is starting
+                    pass
+            
+            if not connected:
+                yield event.plain_result(f"❌ Failed to connect to MindServer after 10 seconds.")
+                # Kill process if connection failed
+                if self.process:
+                    self.process.terminate()
+                    self.process = None
+                return
 
-                await self.sio.emit('create-agent', settings, callback=on_create_callback)
-                yield event.plain_result(f"🤖 Agent '{self.agent_name}' creation requested using {llm_config['provider_type']} model.")
+            yield event.plain_result("✅ Connected to MindServer.")
+            
+            # 4. Create Agent with Dynamic Profile
+            # Instead of loading from file, we construct it from Python config
+            profile_data = {
+                "name": self.agent_name,
+                "model": {
+                    "api": llm_config["provider_type"],
+                    "model": llm_config["model"]
+                }
+            }
+            
+            # Inject custom URL if present (critical for Doubao/Local LLMs)
+            if llm_config["api_url"]:
+                profile_data["model"]["url"] = llm_config["api_url"]
+            
+            logger.info(f"Creating agent with config: {profile_data}")
+            
+            settings = {
+                "profile": profile_data,
+                "host": self.mc_host,
+                "port": self.mc_port,
+                "auth": "offline"
+            }
+            
+            def on_create_callback(response):
+                logger.info(f"Agent creation response: {response}")
 
-            except Exception as e:
-                yield event.plain_result(f"❌ Failed to connect to MindServer: {e}")
-                # Cleanup if connection fails?
-                # await self.mcstop(event)
+            await self.sio.emit('create-agent', settings, callback=on_create_callback)
+            yield event.plain_result(f"🤖 Agent '{self.agent_name}' creation requested using {llm_config['provider_type']} model.")
 
         except Exception as e:
             yield event.plain_result(f"❌ Failed to start process: {e}")
